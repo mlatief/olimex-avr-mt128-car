@@ -37,7 +37,7 @@ HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 
 
 ## Objects that must be built in order to link
-OBJECTS = car1.o lcd.o lcd2.o 
+OBJECTS = car1.o lcd.o lcd2.o utils.o 
 
 ## Objects explicitly added by the user
 LINKONLYOBJECTS = 
@@ -51,6 +51,9 @@ lcd.o: ../lcd.c
 	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
 lcd2.o: ../lcd2.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+utils.o: ../utils.c
 	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
 ##Link

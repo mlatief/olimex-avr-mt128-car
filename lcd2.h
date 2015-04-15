@@ -5,5 +5,6 @@
 
 void lcd_create_glyph(int,const char*);
 void lcd_print(const char*);
+void lcd_set_cursor(unsigned int, unsigned int);
 
 #endif
