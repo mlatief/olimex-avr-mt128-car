@@ -126,8 +126,17 @@ int sound_loop;
 int sound_type;     // Only Music and Crash sounds are currently supported!
 
 ISR(TIMER1_COMPA_vect) {
+
+    int loop_length = 0;
+
+    // Determine maximum samples based on sound_type
+    if(sound_type == SOUND_MUSIC)
+        loop_length = sound_music_length;
+    else if (sound_type == SOUND_CRASH)
+        loop_length = sound_crash_length;
+    
     // Check if at the end of the sound
-    if(sample>=sound_loop_length)
+    if(sample>=loop_length)
     {
         // If loop flag set, repeat
         if(sound_loop)
@@ -139,13 +148,18 @@ ISR(TIMER1_COMPA_vect) {
     // Play different sound according to sound_type
     if(sound_type == SOUND_MUSIC)
     {
-        OCR3BL = pgm_read_byte(&sound_loop_data[sample]);
-        OCR3CL = pgm_read_byte(&sound_loop_data[sample]);
+        OCR3BL = pgm_read_byte(&sound_music_data[sample]);
+        OCR3CL = pgm_read_byte(&sound_music_data[sample]);
     }
     else if(sound_type == SOUND_CRASH)
     {
         OCR3BL = pgm_read_byte(&sound_crash_data[sample]);
         OCR3CL = pgm_read_byte(&sound_crash_data[sample]);
+    }
+    else
+    {
+        OCR3BL = 0x00;
+        OCR3CL = 0xFF;
     }
     
     // Next sample
