@@ -1,24 +1,37 @@
+#include <stdlib.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include <avr/pgmspace.h>
 
 #include <util/delay.h>
-#include <stdlib.h>
 
 #include "lcd.h"
 #include "lcd2.h"
 #include "utils.h"
-
 #include "Bxxxxx.h"
+
+#define SAMPLE_RATE 8000
+// Loop music
+#include "jingle.h"
+
+// Crash sound
+#include "crash18605.h"
 
 void init(void);
 void get_buttons(void);
 
-void setup(void);
+void setup_lcd(void);
+void reset_state(void);
 void show_intro(void);
 void wait_car_jump(void);
 void game_loop(void);
 void show_game_over(void);
+
+void start_sound(void);
+void stop_sound(void);
+void play_loop(void);
+void play_crash(void);
 
 void draw_road(void);
 
@@ -105,48 +118,159 @@ char road[15];      // Rotating array of road with random obstacles placed
 int road_index;     // Current index in the road
 char line_buffer[17];
 
+volatile uint16_t sample;
+#define SOUND_MUSIC  1
+#define SOUND_CRASH  2
+
+int sound_loop;
+int sound_type;     // Only Music and Crash sounds are currently supported!
+
+ISR(TIMER1_COMPA_vect) {
+    // Check if at the end of the sound
+    if(sample>=sound_loop_length)
+    {
+        // If loop flag set, repeat
+        if(sound_loop)
+            sample=0;
+        else
+            stop_sound(); // Otherwise, stop the timers
+    }
+
+    // Play different sound according to sound_type
+    if(sound_type == SOUND_MUSIC)
+    {
+        OCR3BL = pgm_read_byte(&sound_loop_data[sample]);
+        OCR3CL = pgm_read_byte(&sound_loop_data[sample]);
+    }
+    else if(sound_type == SOUND_CRASH)
+    {
+        OCR3BL = pgm_read_byte(&sound_crash_data[sample]);
+        OCR3CL = pgm_read_byte(&sound_crash_data[sample]);
+    }
+    
+    // Next sample
+    ++sample;
+}
+
+/* Timer2 Interrupt Handler for more responsive Inputs */
+ISR(TIMER2_COMP_vect) {
+
+    get_buttons();
+}
+
+/*
+   - Prepare the Timers and interrupts
+   - Sound is generated using two Timers 1 and 3 
+   - Timer1 works as sampler at 8kHz
+   - Timer3 works as 8-bit output (using PWM)
+   - Both pins OC3B & OC3C are connected to the Buzzer
+   - OC3B/OC3C are used for non-inverting / inverting PWM output!
+*/
+void start_sound(void)
+{
+    
+    /* Set buzzer pins as output*/
+    DDRE  |=  (1 << PE4) | (1 << PE5);
+    
+    /* Timer1 used for sampling sound on 8kHz*/
+    // Set Timer1 to CTC mode
+    // WGM13:0 = b0100
+    TCCR1A &= ~((1 << WGM11) | (1 << WGM10));
+    TCCR1B |=  (1 << WGM12);
+    TCCR1B &= ~(1 << WGM13);
+    // Set Timer1 no prescaler 16 000 000 Hz CS12:0 = 001
+    TCCR1B |=  (1 << CS10);
+    TCCR1B &= ~((1 << CS12) | (1 << CS11));
+    // Set OCR1A register value to F_CPU / SAMPLE_RATE 16e6 / 8000 (corresponds to 8kHz)
+    OCR1A = F_CPU/SAMPLE_RATE;
+    // Enable per-sample interrupt for Timer1
+    TIMSK |= (1 << OCIE1A);
+        
+    /* Timer3 is used to generate sound using Fast PWM output */
+    // Set Timer3 to Fast PWM 8-bit mode
+    // WGM33:0 = b0101
+    TCCR3A |=  (1<<WGM30);
+    TCCR3A &= ~(1<<WGM31);
+    TCCR3B |=  (1<<WGM32);
+    TCCR3B &= ~(1<<WGM33);
+    // Do non-inverting PWM on OC3B
+    // COM3B1:0 = b10
+    TCCR3A &= ~(1<<COM3B0);
+    TCCR3A |= (1<<COM3B1);
+    // And inverting on the other PIN
+    // COM3C1:0 = b11
+    TCCR3A |= (1<<COM3C1) | (1<<COM3C0);
+    // No prescalar for Timer3
+    // CS32:0 = b001
+    TCCR3B |=  (1<<CS30); 
+    TCCR3B &= ~((1<<CS32) |(1<<CS31)); 
+    // Set initial pulse width value
+    OCR3B = 0x00; // 128 
+    OCR3C = 0x00; // 128 
+    // No need for interrupts, the Timer3 is used merely to generate modulated PWM signal
+
+    // Set the other pin of the buzzer to 0 always!
+    //PORTE &= ~(1 << PE5);
+    //PORTE |= (1 << PE5);
+    
+    sample = 0;
+    //current_sound = 0;
+}
+
+/*
+    Stop Timers and disable Timer1 interrupt and mute the buzzer!
+*/
+void stop_sound(void)
+{
+    // Disable per-sample interrupt for Timer1
+    TIMSK &= ~(1 << OCIE1A);
+
+    // Disable the per-sample timer completely.
+    TCCR1B &= ~(1<<CS10);
+
+    // Disable the PWM timer.
+    TCCR3B &= ~(1<<CS10);
+    
+    // Write low to the output pins OC3B, OC3C
+    PORTE &= ~(1 << PE4);  
+    PORTE &= ~(1 << PE5);
+    sample = 0;
+}
+
+// Play loop music
+void play_loop(void)
+{
+    stop_sound();
+    sound_loop = 1;
+    sound_type = SOUND_MUSIC;
+    start_sound();
+}
+
+// Play crash sound
+void play_crash(void)
+{
+    stop_sound();
+    sound_loop = 0;
+    sound_type = SOUND_CRASH;
+    start_sound();
+}
 
 void init(void) {
 
-   		/* estetään kaikki keskeytykset */
+   		/* Clear interrupts */
 		cli();
 
-        /* kaiutin pinnit ulostuloksi */
-        DDRE  |=  (1 << PE4) | (1 << PE5);
-        /* pinni PE4 nollataan */
-        PORTE &= ~(1 << PE4);
-        /* pinni PE5 asetetaan */
-        PORTE |=  (1 << PE5);   
-        
-		/* set Timer1 to CTC mode */
-        TCCR1A &= ~( (1 << WGM11) | (1 << WGM10) );
-        TCCR1B |=    (1 << WGM12);
-        TCCR1B &=   ~(1 << WGM13);
-		/* Set Timer1 prescaler (16 000 000 / 1024) = 15625 Hz */
-        TCCR1B |= (1 << CS12) | (1 << CS10);
-
-        /* set OCR1A register value to 0x003e (62 ~ 15625/250) (corresponds to ~250hz) */
-		/* set OCR1A register value to 0x0013 (19 ~ 15625/800) (corresponds to ~800hz) */
-        /* OCR1AH = 0x00; */
-        /* OCR1AL = 0x3e; //62 */
-        OCR1AH = 0x00;
-        OCR1AL = 0x13; //19
-
-		/* enable/disable Output Compare A Match Interrupt for Timer 1*/
-        //TIMSK |= (1 << OCIE1A);
-        TIMSK &= ~(1 << OCIE1A);
-
-        
-		/* set Timer2 to CTC mode, and normal port operation */
+        /* Timer2 used for reading user inputs in responsive way*/
+		// Set Timer2 to CTC mode, and normal port operation
+        // WGM21:0 = b10 and COM21:0 = 00
         TCCR2 &= ~( (1 << WGM20) | (1 << COM21) | (1 << COM20));
         TCCR2 |=  (1 << WGM21);
-        /* Set Timer2 prescaler (16 000 000 / 1024) = 15625 Hz */
+        // Set Timer2 prescaler (16 000 000 / 1024) = 15625 Hz
         TCCR2 |= (1 << CS22) | (1 << CS20);
         TCCR2 &= ~(1<< CS21);
-        /* set OCR2 register value to 0x003e (62 ~ 15625/250) (corresponds to ~250hz) */
+        // Set OCR2 register value to 0x003e (62 ~ 15625/250) (corresponds to ~250hz)
         OCR2 = 0x3e; //62
-        
-		/* enable Output Compare Match Interrupt for Timer 2*/
+		// Enable Output Compare Match Interrupt for Timer 2
         TIMSK |= (1 << OCIE2);
         
 		/* näppäin pinnit sisääntuloksi */
@@ -162,20 +286,42 @@ void init(void) {
         
 }
 
-ISR(TIMER1_COMPA_vect) {
 
-	/* vaihdetaan kaiutin pinnien tilat XOR operaatiolla */
- 	PORTE ^= (1 << PE4) | (1 << PE5); 
+int main(void) 
+{
+    init();
+    sei();
+    
+    setup_lcd();
+    
+    // Basic state machine (0) Intro -> (1) Wait to Start -> (2) Game Loop -> (3) Game Over
+    //                                   ^_____________________________________|
+    // (0)
+    show_intro();
+    
+    // Stepping through the states
+    while(1)
+    {
+        // (1)
+        wait_car_jump();
+        
+        reset_state();
+        play_loop();
+        
+        // (2)
+        game_loop();
+
+        play_crash();
+        
+        // (3)
+        show_game_over();
+    }
 }
 
-/* Special Timer and Interrupt Handler for more responsive Inputs */
-ISR(TIMER2_COMP_vect) {
-
-    get_buttons();
-}
-
+// Indicates if Jump button is pressed but not yet released
 int jump_down = 0;
-/* Read user inputs: Right, Left and Jump! for now */
+
+/* Read user inputs: Right, Left and Jump! */
 void get_buttons(void)
 {
     // Button 1 moves the car to Right Lane
@@ -202,10 +348,10 @@ void get_buttons(void)
             jump_down = 0;
         }
     }
-
 }
 
-void setup(void)
+// Mainly to setup LCD characters
+void setup_lcd(void)
 {
     for (int i = 0; i < NGLYPHS; i++) {
         lcd_create_glyph(i + 1, glyphs[i]);	// create glyphs
@@ -217,7 +363,7 @@ void setup(void)
 }
 
 // Reset game state and clear previous display
-void reset_state()
+void reset_state(void)
 {
     int seed = TCNT1;
     srand(seed);
@@ -225,6 +371,7 @@ void reset_state()
     car_pos = RIGHTLANE; // Initially in the right lane
     step_duration = MAXSTEPDURATION; // Start from the slowest step speed ( maximum duration )
     
+    // Brand new obstacle free road ! 
     for(int i=0; i<ROADLEN;i++)
     {
         road[i] = 0;
@@ -240,6 +387,7 @@ void reset_state()
     lcd_write_ctrl(LCD_CLEAR);
 }
 
+// Print Splash Screen!
 void show_intro(void)
 {
     char welcome_1[] = "Avoid  Obstacles";
@@ -320,7 +468,7 @@ void game_loop(void)
 }
 
 
-// Draw crash glyph and print Game Over!
+// Draw crash glyph and print Scores
 void show_game_over(void)
 {
     char game_over_1[] = " Score: nnn  "; // indices: 7,8,9 to write the score digits, 11 for HScore Symbol
@@ -353,37 +501,10 @@ void show_game_over(void)
     lcd_print(game_over_2);
 }
 
-int main(void) 
-{
-    init();
-    sei();
-    
-    setup();
-    
-    // Basic state machine (0) Intro -> (1) Wait to Start -> (2) Game Loop -> (3) Game Over
-    //                                   ^_____________________________________|
-    // (0)
-    show_intro();
-    
-    // Stepping through the states
-    while(1)
-    {
-        // (1)
-        wait_car_jump();
-        
-        reset_state();
-        
-        // (2)
-        game_loop();
-        
-        // (3)
-        show_game_over();
-    }
-}
-
-
+// Draw the scrolling road and render new obstacles as well as the score, car, and crash symbol!
 void draw_road(void)
 {
+    // Score is displayed on two lines
     char score_lines[2];
     
     // Get the Higher and Lower order bytes of the score
@@ -396,7 +517,7 @@ void draw_road(void)
         // Print the score byte;
         line_buffer[0] = score_lines[i-1] + '0';
 
-        // Print the car, car jump or the crash symbol;
+        // Print the car, car jump or the crash symbol, or BLANK if nothing in this lane;
         if(car_pos == i)
         {
             if (crash)
