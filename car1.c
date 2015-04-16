@@ -1,3 +1,4 @@
+/* car1.c - main file: game loop, sound playing, road rendering .. etc */
 #include <stdlib.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -36,13 +37,16 @@ void play_crash(void);
 void draw_road(void);
 
 const int ROADLEN = 15;          // Maximum length of the road, used to circularly iterate over the road map
-const int MAXSTEPDURATION = 600; // Start slowly (300ms between steps), each step is 1 millisec shorter.
+const int MAXSTEPDURATION = 600; // Start slowly (600ms between steps), each step is 1 millisec shorter.
 const int MINSTEPDURATION = 150; // This is as fast as it gets
 const int CARJUMPSTEPS = 4;      // MOD of number of steps a car jump stays 
 
 const char RIGHTLANE = 1;       // B01
 const char LEFTLANE = 2;        // B10
 const char BOTHLANES = 3;       // B11
+
+const long MAXCARACCEL =  5000;  // Max Car acceleration (in 1/10 msec)
+const long MINCARACCEL = -5000; // Min Car brake (in 1/10 msec)
 
 const unsigned int SCORE_ADDR = 0x0004;   // Arbitary address in EEPROM to store High Score between power cycles
 
@@ -51,6 +55,7 @@ const int MAXOBSTACLES = 5 * 3;
 
 const int NGLYPHS = 5;
 const char BLANK = 32;
+const char MARKS[] = {47, 96};
 
 const int GLYPH_CAR = 1;
 const int GLYPH_CAR_JUMP = 2;
@@ -78,14 +83,14 @@ char glyphs[5][8] = {
 	B11100,
 	B11100}
 	// 3: obstacle
-  ,{B10000,
-	B11000,
-	B11100,
-	B11000,
-	B11000,
-	B11100,
-	B11000,
-	B10000}
+  ,{B00001,
+	B00011,
+	B00111,
+	B00011,
+	B00011,
+	B00111,
+	B00011,
+	B00001}
 	// 4: crash
   ,{B10001,
 	B11011,
@@ -112,6 +117,8 @@ char car_pos;       // 1: Right lane, 2: Left lane
 int car_jump;       // 0: On the ground, 1~3: Jumping and rotates back to 0 then stops
 int crash;          // Indicates an unfortunate car crash!
 long score;         // Accumlate the score ( time passed without crash in msec )
+long car_accel;     // Car accelration in micro-seconds: -ve Accelerating, +ve Braking or 0 None.
+int jump_down = 0; // Indicates if Jump button is pressed but not yet released
 
 int step_duration;  // Moving speed, speed should increase with 1msec each loop
 char road[15];      // Rotating array of road with random obstacles placed
@@ -332,9 +339,6 @@ int main(void)
     }
 }
 
-// Indicates if Jump button is pressed but not yet released
-int jump_down = 0;
-
 /* Read user inputs: Right, Left and Jump! */
 void get_buttons(void)
 {
@@ -349,6 +353,34 @@ void get_buttons(void)
         // Button 5 moves the car to Left Lane
         car_pos = LEFTLANE;
     }
+
+    // Accelerating/Breaking is increasing/decreasing rather than hard -ve/+ve Steps
+    //
+    // Note: this function is called 250 times per second!
+    // the acceleration is incremented linearly and slowly,
+    //
+    // Button 2 moves the car faster (accelerate) -ve step duration
+    if(!(PINA & 0b00000010))
+    {
+        if(car_accel>MINCARACCEL)
+            car_accel -= 10;
+    }
+    // Mutually exclusive checking, so only one button takes precedency
+    else if(!(PINA & 0b00001000))
+    {
+        // Button 4 moves the car slower (brake) +ve step duration
+        if(car_accel<MAXCARACCEL)
+            car_accel += 10;
+    }
+    else
+    {
+        // Ramping down/up to Normal speed 
+        if(car_accel>0)
+            car_accel -= 1;
+        else if(car_accel<0)
+            car_accel += 1;
+    }
+
     
     // Jump when button released after it was pressed, to avoid Flying Car!
     if(!(PINA & 0b00000100))
@@ -395,7 +427,7 @@ void reset_state(void)
     line_buffer[ROADLEN+1] = '\0';
     car_jump = 0;
     crash = 0;
-    
+    car_accel = 0;
     road_index = 0;
     score = 0 ;
     
@@ -405,8 +437,8 @@ void reset_state(void)
 // Print Splash Screen!
 void show_intro(void)
 {
-    char welcome_1[] = "Avoid  Obstacles";
-    char welcome_2[] = ">Jump to Start!<";
+    char welcome_1[] = "_--Drive Safe--_";
+    char welcome_2[] = "'Jump to Start!'";
     
     lcd_print(welcome_1);
     lcd_set_cursor(0,1);
@@ -472,11 +504,14 @@ void game_loop(void)
                 car_jump = (car_jump+1)%CARJUMPSTEPS;
             }
             
-            delay_msec(step_duration);
+            // The speed of rendering the road (this loop) is decreasing
+            // Also, if accelerate/brake buttons pressed, increase/decrease the rendering speed
+            int dly = step_duration + (car_accel/10);
+            delay_msec(dly);
             if (step_duration > MINSTEPDURATION) {
                 step_duration--; 
             }
-            score += step_duration;
+            score += dly;
 
         }
     }
@@ -559,11 +594,12 @@ void draw_road(void)
 
         // Print the obstacles
 		for (int j = 0; j < ROADLEN - 1; j++) {
-			int obs = road[(j + road_index)%ROADLEN];
+            int idx = (j + road_index)%ROADLEN;
+			int obs = road[idx];
 			
             // Here we do bitwise AND between obstacle pattern and lane
             // Use the fact that obstacle patterns are: 1 (B01) right lane, 2 (B10) left lane and 3 (B11) both lanes
-            line_buffer[ROADLEN - j - 1] = (obs & i) ? GLYPH_OBSTACLE : BLANK;
+            line_buffer[ROADLEN - j - 1] = (obs & i) ? GLYPH_OBSTACLE : (idx%2)?BLANK:MARKS[i-1];
 		}
         
         // Null-terminate in order for lcd_print() to function properly

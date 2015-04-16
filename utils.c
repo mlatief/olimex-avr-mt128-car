@@ -1,3 +1,4 @@
+/* utils.c - helper utilities: range random number and more convenient delay */
 #include <util/delay.h>
 #include <stdlib.h>
 
