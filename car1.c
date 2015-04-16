@@ -28,8 +28,8 @@ void wait_car_jump(void);
 void game_loop(void);
 void show_game_over(void);
 
-void start_sound(void);
-void stop_sound(void);
+void enable_sound(void);
+void disable_sound(void);
 void play_loop(void);
 void play_crash(void);
 
@@ -142,7 +142,7 @@ ISR(TIMER1_COMPA_vect) {
         if(sound_loop)
             sample=0;
         else
-            stop_sound(); // Otherwise, stop the timers
+            disable_sound(); // Otherwise, stop the timers
     }
 
     // Play different sound according to sound_type
@@ -180,7 +180,7 @@ ISR(TIMER2_COMP_vect) {
    - Both pins OC3B & OC3C are connected to the Buzzer
    - OC3B/OC3C are used for non-inverting / inverting PWM output!
 */
-void start_sound(void)
+void enable_sound(void)
 {
     
     /* Set buzzer pins as output*/
@@ -234,7 +234,7 @@ void start_sound(void)
 /*
     Stop Timers and disable Timer1 interrupt and mute the buzzer!
 */
-void stop_sound(void)
+void disable_sound(void)
 {
     // Disable per-sample interrupt for Timer1
     TIMSK &= ~(1 << OCIE1A);
@@ -254,19 +254,19 @@ void stop_sound(void)
 // Play loop music
 void play_loop(void)
 {
-    stop_sound();
+    disable_sound();
     sound_loop = 1;
     sound_type = SOUND_MUSIC;
-    start_sound();
+    enable_sound();
 }
 
 // Play crash sound
 void play_crash(void)
 {
-    stop_sound();
+    disable_sound();
     sound_loop = 0;
     sound_type = SOUND_CRASH;
-    start_sound();
+    enable_sound();
 }
 
 void init(void) {
@@ -379,7 +379,8 @@ void setup_lcd(void)
 // Reset game state and clear previous display
 void reset_state(void)
 {
-    int seed = TCNT1;
+    // Initialize seed to Timer2 which roughly works as global time
+    int seed = TCNT2;
     srand(seed);
     
     car_pos = RIGHTLANE; // Initially in the right lane

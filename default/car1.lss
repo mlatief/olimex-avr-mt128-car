@@ -11,21 +11,21 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
   3 .debug_aranges 00000220  00000000  00000000  0000638c  2**0
                   CONTENTS, READONLY, DEBUGGING
-  4 .debug_pubnames 0000059b  00000000  00000000  000065ac  2**0
+  4 .debug_pubnames 0000059f  00000000  00000000  000065ac  2**0
                   CONTENTS, READONLY, DEBUGGING
-  5 .debug_info   00003108  00000000  00000000  00006b47  2**0
+  5 .debug_info   00003108  00000000  00000000  00006b4b  2**0
                   CONTENTS, READONLY, DEBUGGING
-  6 .debug_abbrev 0000183b  00000000  00000000  00009c4f  2**0
+  6 .debug_abbrev 0000183b  00000000  00000000  00009c53  2**0
                   CONTENTS, READONLY, DEBUGGING
-  7 .debug_line   00001dcc  00000000  00000000  0000b48a  2**0
+  7 .debug_line   00001dcc  00000000  00000000  0000b48e  2**0
                   CONTENTS, READONLY, DEBUGGING
-  8 .debug_frame  000003d0  00000000  00000000  0000d258  2**2
+  8 .debug_frame  000003d0  00000000  00000000  0000d25c  2**2
                   CONTENTS, READONLY, DEBUGGING
-  9 .debug_str    000006ba  00000000  00000000  0000d628  2**0
+  9 .debug_str    000006be  00000000  00000000  0000d62c  2**0
                   CONTENTS, READONLY, DEBUGGING
- 10 .debug_loc    00000f4a  00000000  00000000  0000dce2  2**0
+ 10 .debug_loc    00000f4a  00000000  00000000  0000dcea  2**0
                   CONTENTS, READONLY, DEBUGGING
- 11 .debug_ranges 000000f8  00000000  00000000  0000ec2c  2**0
+ 11 .debug_ranges 000000f8  00000000  00000000  0000ec34  2**0
                   CONTENTS, READONLY, DEBUGGING
 
 Disassembly of section .text:
@@ -1148,9 +1148,9 @@ Disassembly of section .text:
 0000441e <__bad_interrupt>:
     441e:	0c 94 00 00 	jmp	0	; 0x0 <__vectors>
 
-00004422 <start_sound>:
+00004422 <enable_sound>:
 */
-void start_sound(void)
+void enable_sound(void)
 {
     
     /* Set buzzer pins as output*/
@@ -1271,10 +1271,10 @@ void start_sound(void)
 }
     44ba:	08 95       	ret
 
-000044bc <stop_sound>:
+000044bc <disable_sound>:
     Stop Timers and disable Timer1 interrupt and mute the buzzer!
 */
-void stop_sound(void)
+void disable_sound(void)
 {
     // Disable per-sample interrupt for Timer1
     TIMSK &= ~(1 << OCIE1A);
@@ -1384,8 +1384,8 @@ ISR(TIMER1_COMPA_vect) {
     4556:	10 92 c8 02 	sts	0x02C8, r1
     455a:	02 c0       	rjmp	.+4      	; 0x4560 <__vector_12+0x6c>
         else
-            stop_sound(); // Otherwise, stop the timers
-    455c:	0e 94 5e 22 	call	0x44bc	; 0x44bc <stop_sound>
+            disable_sound(); // Otherwise, stop the timers
+    455c:	0e 94 5e 22 	call	0x44bc	; 0x44bc <disable_sound>
     }
 
     // Play different sound according to sound_type
@@ -1492,8 +1492,8 @@ ISR(TIMER1_COMPA_vect) {
 // Play loop music
 void play_loop(void)
 {
-    stop_sound();
-    461a:	0e 94 5e 22 	call	0x44bc	; 0x44bc <stop_sound>
+    disable_sound();
+    461a:	0e 94 5e 22 	call	0x44bc	; 0x44bc <disable_sound>
     sound_loop = 1;
     461e:	81 e0       	ldi	r24, 0x01	; 1
     4620:	90 e0       	ldi	r25, 0x00	; 0
@@ -1502,8 +1502,8 @@ void play_loop(void)
     sound_type = SOUND_MUSIC;
     462a:	90 93 99 02 	sts	0x0299, r25
     462e:	80 93 98 02 	sts	0x0298, r24
-    start_sound();
-    4632:	0e 94 11 22 	call	0x4422	; 0x4422 <start_sound>
+    enable_sound();
+    4632:	0e 94 11 22 	call	0x4422	; 0x4422 <enable_sound>
 }
     4636:	08 95       	ret
 
@@ -1512,8 +1512,8 @@ void play_loop(void)
 // Play crash sound
 void play_crash(void)
 {
-    stop_sound();
-    4638:	0e 94 5e 22 	call	0x44bc	; 0x44bc <stop_sound>
+    disable_sound();
+    4638:	0e 94 5e 22 	call	0x44bc	; 0x44bc <disable_sound>
     sound_loop = 0;
     463c:	10 92 b6 02 	sts	0x02B6, r1
     4640:	10 92 b5 02 	sts	0x02B5, r1
@@ -1522,8 +1522,8 @@ void play_crash(void)
     4646:	90 e0       	ldi	r25, 0x00	; 0
     4648:	90 93 99 02 	sts	0x0299, r25
     464c:	80 93 98 02 	sts	0x0298, r24
-    start_sound();
-    4650:	0e 94 11 22 	call	0x4422	; 0x4422 <start_sound>
+    enable_sound();
+    4650:	0e 94 11 22 	call	0x4422	; 0x4422 <enable_sound>
 }
     4654:	08 95       	ret
 
@@ -2509,15 +2509,15 @@ void wait_car_jump(void)
     4cb4:	08 95       	ret
 
 00004cb6 <reset_state>:
-}
 
 // Reset game state and clear previous display
 void reset_state(void)
 {
-    int seed = TCNT1;
-    4cb6:	8c b5       	in	r24, 0x2c	; 44
-    4cb8:	9d b5       	in	r25, 0x2d	; 45
+    // Initialize seed to Timer2 which roughly works as global time
+    int seed = TCNT2;
+    4cb6:	84 b5       	in	r24, 0x24	; 36
     srand(seed);
+    4cb8:	90 e0       	ldi	r25, 0x00	; 0
     4cba:	0e 94 55 30 	call	0x60aa	; 0x60aa <srand>
     
     car_pos = RIGHTLANE; // Initially in the right lane
