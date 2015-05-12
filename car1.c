@@ -55,7 +55,7 @@ const int MAXOBSTACLES = 5 * 3;
 
 const int NGLYPHS = 5;
 const char BLANK = 32;
-const char MARKS[] = {47, 96};
+//const char MARKS[] = {47, 96};
 
 const int GLYPH_CAR = 1;
 const int GLYPH_CAR_JUMP = 2;
@@ -65,23 +65,23 @@ const int GLYPH_HSCORE = 5;
 
 char glyphs[5][8] = {
 	// 1: car normal
-   {B00111,
-	B00011,
-	B01110,
-	B01110,
-	B01110,
-	B01110,
-	B00011,
-	B00111}
+   {B00011,
+	B00110,
+	B00010,
+	B01111,
+	B01111,
+	B00010,
+	B00110,
+	B00011}
 	// 2: car jump!
-  ,{B11100,
+  ,{B01100,
 	B11100,
 	B11000,
 	B11000,
 	B11000,
 	B11000,
 	B11100,
-	B11100}
+	B01100}
 	// 3: obstacle
   ,{B00001,
 	B00011,
@@ -320,6 +320,8 @@ int main(void)
     // (0)
     show_intro();
     
+    play_loop();
+    
     // Stepping through the states
     while(1)
     {
@@ -327,7 +329,7 @@ int main(void)
         wait_car_jump();
         
         reset_state();
-        play_loop();
+        disable_sound();
         
         // (2)
         game_loop();
@@ -599,7 +601,7 @@ void draw_road(void)
 			
             // Here we do bitwise AND between obstacle pattern and lane
             // Use the fact that obstacle patterns are: 1 (B01) right lane, 2 (B10) left lane and 3 (B11) both lanes
-            line_buffer[ROADLEN - j - 1] = (obs & i) ? GLYPH_OBSTACLE : (idx%2)?BLANK:MARKS[i-1];
+            line_buffer[ROADLEN - j - 1] = (obs & i) ? GLYPH_OBSTACLE : BLANK;
 		}
         
         // Null-terminate in order for lcd_print() to function properly
